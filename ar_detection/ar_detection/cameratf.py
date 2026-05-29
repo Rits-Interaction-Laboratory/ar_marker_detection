@@ -25,7 +25,7 @@ class camera_point(ImagePreviewNode):
         
         self.marker_in_world_coordinate = np.array([0.3,0,0]) #ワールド座標系における、印の位置
         
-        self.marker_size = 0.247 #マーカーの１辺 0.1m = 10cm marker length scale is meter
+        self.marker_size = 0.2 #マーカーの１辺 0.1m = 10cm marker length scale is meter
         self.corners = None #マーカーの角
         self.ids = None #マーカーのID
         
@@ -122,6 +122,7 @@ class camera_point(ImagePreviewNode):
                         self.corners = corners
                         self.ids = ids
                         self.is_average = True #回転行列の平均取得完了
+                        print("tvec:", self.tvec_average)
                     
                     if self.is_average:
                         rotation_vector = self.rvec_average
@@ -171,6 +172,9 @@ class camera_point(ImagePreviewNode):
                     
                     if self.is_average:
                         cv2.putText(frame_markers,"average of rotation matrix was calculated.",(100,50),cv2.FONT_HERSHEY_DUPLEX, 1.0, (0,255,0))
+                    if self.rvec_average is not None and not hasattr(self, '_saved'):
+                        cv2.imwrite('ar_detection_result.png', frame_markers)
+                        self._saved = True
                     # print("平均の回転行列")
                     # print(self.rotation_matrix_average)
                     
@@ -210,12 +214,13 @@ class camera_point(ImagePreviewNode):
                 transform_msg.header.stamp = self.get_clock().now().to_msg()
                 transform_msg.header.frame_id = "marker"
                 transform_msg.child_frame_id = "camera"
-                # print(self.tvec_average)
-                transform_msg.transform.translation.x = self.tvec_average[0][0][0] #* 1000 # if you want to cnvert scale from meter to milimeter
-                transform_msg.transform.translation.y = self.tvec_average[0][0][1] #* 1000 # please multiple 1000
-                transform_msg.transform.translation.z = self.tvec_average[0][0][2] #* 1000
                 rmat, _ = cv2.Rodrigues(self.rvec_average)
-                q = quaternion.from_rotation_matrix(rmat,nonorthogonal=True)
+                # invert: tvec is marker-in-camera, we need camera-in-marker
+                t = -rmat.T @ self.tvec_average[0][0]
+                transform_msg.transform.translation.x = t[0]
+                transform_msg.transform.translation.y = t[1]
+                transform_msg.transform.translation.z = t[2]
+                q = quaternion.from_rotation_matrix(rmat.T, nonorthogonal=True)
                 # print(q)
                 transform_msg.transform.rotation.x = q.x
                 transform_msg.transform.rotation.y = q.y
@@ -255,8 +260,6 @@ class camera_point(ImagePreviewNode):
         img = cv2.line(img, origin, tuple(img_pts[2].ravel()), (255, 0, 0), 3)
         
         return img,img_pts
-    
-    
 def main(args=None):
     rclpy.init(args=args) #rclpyを初期化
 
